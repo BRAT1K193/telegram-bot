@@ -14,24 +14,12 @@ ADMIN_MODE = False
 ADMIN_USERNAMES = ["@coobaalt"]
 
 # База данных PostgreSQL
-DATABASE_URL = os.getenv('DATABASE_URL', 'sqlite:///bot.db')  # Railway сам добавит
-
-try:
-    conn = psycopg2.connect(DATABASE_URL, sslmode='require')
-    cursor = conn.cursor()
-    cursor.execute('''CREATE TABLE IF NOT EXISTS links
-                    (id SERIAL PRIMARY KEY, original_url TEXT, short_code TEXT UNIQUE, clicks INTEGER DEFAULT 0)''')
-    conn.commit()
-    print("✅ Подключение к PostgreSQL установлено")
-except:
-    # Fallback на SQLite для локального тестирования
-    import sqlite3
-    conn = sqlite3.connect('bot.db', check_same_thread=False)
-    cursor = conn.cursor()
-    cursor.execute('''CREATE TABLE IF NOT EXISTS links
-                    (id INTEGER PRIMARY KEY, original_url TEXT, short_code TEXT UNIQUE, clicks INTEGER DEFAULT 0)''')
-    conn.commit()
-    print("✅ Подключение к SQLite установлено")
+DATABASE_URL = os.getenv('DATABASE_URL')
+conn = psycopg2.connect(DATABASE_URL, sslmode='require')
+cursor = conn.cursor()
+cursor.execute('''CREATE TABLE IF NOT EXISTS links
+                (id SERIAL PRIMARY KEY, original_url TEXT, short_code TEXT UNIQUE, clicks INTEGER DEFAULT 0)''')
+conn.commit()
 
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.basicConfig(level=logging.INFO)
