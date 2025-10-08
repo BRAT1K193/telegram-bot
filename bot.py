@@ -1,6 +1,8 @@
 import logging
 import random
 import string
+import json
+import os
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 
@@ -9,8 +11,29 @@ BOT_TOKEN = "8465329960:AAH1mWkb9EO1eERvTQbR4WD2eTL5JD9IWBk"
 CHANNELS = ["@EasyScriptRBX"]
 ADMIN_USERNAMES = ["@coobaalt"]
 
-# Храним ссылки в памяти (временно)
-links = {}
+# Файл для хранения ссылок
+LINKS_FILE = 'links.json'
+
+# Загрузка ссылок из файла
+def load_links():
+    try:
+        if os.path.exists(LINKS_FILE):
+            with open(LINKS_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+    except:
+        pass
+    return {}
+
+# Сохранение ссылок в файл
+def save_links(links_dict):
+    try:
+        with open(LINKS_FILE, 'w', encoding='utf-8') as f:
+            json.dump(links_dict, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print(f"Ошибка сохранения: {e}")
+
+# Загружаем ссылки при старте
+links = load_links()
 
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.basicConfig(level=logging.INFO)
@@ -75,7 +98,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         original_url = update.message.text
         short_code = generate_short_code()
         
-        links[short_code] = original_url  # Сохраняем в памяти
+        links[short_code] = original_url
+        save_links(links)  # Сохраняем в файл
+        
         short_url = f"https://t.me/{context.bot.username}?start={short_code}"
         await update.message.reply_text(f"✅ Ссылка создана: {short_url}")
 
@@ -100,6 +125,7 @@ def main():
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_handler(CallbackQueryHandler(button_handler))
     print("Бот запущен...")
+    print(f"Загружено ссылок: {len(links)}")
     app.run_polling()
 
 if __name__ == "__main__":
