@@ -2,6 +2,7 @@ import logging
 import os
 import random
 import string
+import time
 import psycopg2
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
@@ -13,13 +14,23 @@ ADMIN_PASSWORD = "savva_gay"
 ADMIN_MODE = False
 ADMIN_USERNAMES = ["@coobaalt"]
 
-# База данных PostgreSQL
-DATABASE_URL = os.getenv('DATABASE_URL')
-conn = psycopg2.connect(DATABASE_URL, sslmode='require')
-cursor = conn.cursor()
-cursor.execute('''CREATE TABLE IF NOT EXISTS links
-                (id SERIAL PRIMARY KEY, original_url TEXT, short_code TEXT UNIQUE, clicks INTEGER DEFAULT 0)''')
-conn.commit()
+# Подключение к базе данных с повторными попытками
+def connect_db():
+    for i in range(5):  # 5 попыток
+        try:
+            conn = psycopg2.connect(os.getenv('DATABASE_URL'), sslmode='require')
+            cursor = conn.cursor()
+            cursor.execute('''CREATE TABLE IF NOT EXISTS links
+                            (id SERIAL PRIMARY KEY, original_url TEXT, short_code TEXT UNIQUE, clicks INTEGER DEFAULT 0)''')
+            conn.commit()
+            print("✅ База данных подключена")
+            return conn, cursor
+        except Exception as e:
+            print(f"❌ Попытка {i+1}/5: {e}")
+            time.sleep(5)  # Ждем 5 секунд
+    raise Exception("Не удалось подключиться к базе данных")
+
+conn, cursor = connect_db()
 
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.basicConfig(level=logging.INFO)
