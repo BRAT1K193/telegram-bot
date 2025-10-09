@@ -116,18 +116,23 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Только админ может создавать ссылки")
         return
 
-    if update.message.text.startswith('http') or 'loadstring(game:HttpGet(' in update.message.text:
+    if update.message.text.startswith('http') or 'loadstring(game:HttpGet' in update.message.text:
         original_url = update.message.text
+        
         short_code = generate_short_code()
-        
-        links[short_code] = original_url
-        save_links(links)
-        
-        stats["total_links"] += 1
-        save_stats(stats)
-        
-        short_url = f"https://t.me/{context.bot.username}?start={short_code}"
-        await update.message.reply_text(f"✅ Ссылка создана: {short_url}")
+
+        try:
+            links[short_code] = original_url
+            save_links(links)
+            
+            stats["total_links"] += 1
+            save_stats(stats)
+            
+            short_url = f"https://t.me/{context.bot.username}?start={short_code}"
+            await update.message.reply_text(f"✅ Ссылка создана: {short_url}")
+        except Exception as e:
+            print(f"Ошибка: {e}")
+            await update.message.reply_text("❌ Ошибка. Попробуй еще раз")
 
 # Статистика
 async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
