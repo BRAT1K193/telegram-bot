@@ -8,7 +8,7 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 
 # Настройки
 BOT_TOKEN = "8465329960:AAH1mWkb9EO1eERvTQbR4WD2eTL5JD9IWBk"
-CHANNELS = ["@EasyScriptRBX"]
+CHANNELS = ["@EasyScriptRBX", "https://t.me/+tknweCXA5qo4ZmUy"]
 ADMIN_USERNAMES = ["@coobaalt"]
 
 # Файлы для хранения
