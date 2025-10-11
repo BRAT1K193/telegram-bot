@@ -302,6 +302,32 @@ async def startbot_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     success, fail = await broadcast(context, "🟢 Бот снова в сети! Технические работы завершены.")
     await update.message.reply_text(f"✅ Уведомление отправлено:\nУспешно: {success}\nНе удалось: {fail}")
+
+# ДОБАВЛЯЕМ ЭТУ ФУНКЦИЮ ДЛЯ ДЕБАГА
+async def debug_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_username = f"@{update.effective_user.username}" if update.effective_user.username else ""
+    if user_username not in ADMIN_USERNAMES:
+        return
+    
+    # Проверяем загрузку данных
+    await load_all_data(context, force=True)
+    
+    # Смотрим что в каналах
+    debug_info = f"""
+🔍 **ДЕБАГ ИНФО:**
+
+📊 Загружено ссылок: {len(links)}
+👥 Загружено пользователей: {len(users)}
+🕐 Последнее обновление кэша: {time.time() - last_cache_update:.0f} сек назад
+
+📨 Примеры ссылок в памяти:
+"""
+    
+    # Показываем первые 5 ссылок
+    for i, (code, url) in enumerate(list(links.items())[:5]):
+        debug_info += f"{i+1}. {code} → {url[:50]}...\n"
+    
+    await update.message.reply_text(debug_info)
     
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -332,6 +358,7 @@ def main():
     app.add_handler(CommandHandler("graph", graph_command))
     app.add_handler(CommandHandler("stopbot", stopbot_command))
     app.add_handler(CommandHandler("startbot", startbot_command))
+    app.add_handler(CommandHandler("debug", debug_command))  # ← ДОБАВИЛИ ЭТУ СТРОЧКУ
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_handler(CallbackQueryHandler(button_handler))
     
