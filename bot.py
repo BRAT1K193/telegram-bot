@@ -7,31 +7,26 @@ from datetime import datetime, timedelta
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 
-# Настройки
 BOT_TOKEN = "8465329960:AAH1mWkb9EO1eERvTQbR4WD2eTL5JD9IWBk"
 CHANNELS = ["@EasyScriptRBX"]
 ADMIN_USERNAMES = ["@coobaalt"]
 
-# ID каналов (ЗАМЕНИ НА СВОИ)
 LINKS_CHANNEL_ID = "-1003192392842"
 USERS_CHANNEL_ID = "-1003138750808"  
 STATS_CHANNEL_ID = "-1003119775402"
 
-# Ограничения
 MAX_LINKS_PER_MINUTE = 10  # Максимум ссылок в минуту
 user_limits = {}  # Кэш ограничений
 
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.basicConfig(level=logging.INFO)
 
-# Глобальные переменные
 links = {}
 users = set()
 stats = {"total_links": 0, "total_clicks": 0}
 last_cache_update = 0
-CACHE_TIMEOUT = 300  # 5 минут
+CACHE_TIMEOUT = 900  # 15 минут
 
-# Загрузка данных из каналов с кэшированием
 async def load_all_data(context, force=False):
     global links, users, stats, last_cache_update
     
@@ -41,7 +36,6 @@ async def load_all_data(context, force=False):
         
     print("🔄 Обновление кэша...")
     
-    # Загружаем ссылки
     new_links = {}
     try:
         async for message in context.bot.get_chat_history(LINKS_CHANNEL_ID, limit=1000):
@@ -51,7 +45,6 @@ async def load_all_data(context, force=False):
     except Exception as e:
         print(f"Ошибка загрузки ссылок: {e}")
 
-    # Загружаем пользователей
     new_users = set()
     try:
         async for message in context.bot.get_chat_history(USERS_CHANNEL_ID, limit=10000):
@@ -61,7 +54,6 @@ async def load_all_data(context, force=False):
     except Exception as e:
         print(f"Ошибка загрузки пользователей: {e}")
 
-    # Загружаем статистику
     new_stats = {"total_links": 0, "total_clicks": 0}
     try:
         async for message in context.bot.get_chat_history(STATS_CHANNEL_ID, limit=1):
@@ -72,7 +64,6 @@ async def load_all_data(context, force=False):
     except Exception as e:
         print(f"Ошибка загрузки статистики: {e}")
     
-    # Обновляем глобальные переменные
     links = new_links
     users = new_users
     stats = new_stats
@@ -80,23 +71,20 @@ async def load_all_data(context, force=False):
     
     print(f"✅ Кэш обновлен: {len(links)} ссылок, {len(users)} пользователей")
 
-# Проверка ограничений
 def check_rate_limit(user_id):
     now = time.time()
     if user_id not in user_limits:
         user_limits[user_id] = []
     
-    # Удаляем старые записи (старше 1 минуты)
+
     user_limits[user_id] = [t for t in user_limits[user_id] if now - t < 60]
     
-    # Проверяем лимит
     if len(user_limits[user_id]) >= MAX_LINKS_PER_MINUTE:
         return False
     
     user_limits[user_id].append(now)
     return True
 
-# Сохранение в каналы
 async def save_link_to_channel(context, short_code, original_url):
     try:
         await context.bot.send_message(
@@ -130,7 +118,6 @@ async def save_stats_to_channel(context):
         print(f"Ошибка сохранения статистики: {e}")
         return False
 
-# Проверка подписки
 async def check_subscription(user_id, context):
     for channel in CHANNELS:
         try:
@@ -141,11 +128,9 @@ async def check_subscription(user_id, context):
             return False
     return True
 
-# Генерация кода
 def generate_short_code():
     return ''.join(random.choices(string.ascii_letters + string.digits, k=6))
 
-# Команда help (показывается при "/")
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_username = f"@{update.effective_user.username}" if update.effective_user.username else ""
     
@@ -170,14 +155,11 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(text)
 
-# Команда start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     
-    # Обновляем кэш при каждом старте
     await load_all_data(context)
     
-    # Сохраняем пользователя если его нет
     if user_id not in users:
         users.add(user_id)
         await save_user_to_channel(context, user_id)
@@ -214,10 +196,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             await update.message.reply_text("❌ Ссылка не найдена")
     else:
-        # ПРОСТО МОЛЧИМ - НИЧЕГО НЕ ДЕЛАЕМ
         return
 
-# Создание ссылки
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_username = f"@{update.effective_user.username}" if update.effective_user.username else ""
     user_id = update.effective_user.id
@@ -226,7 +206,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Только админ может создавать ссылки")
         return
 
-    # Проверяем ограничение
     if not check_rate_limit(user_id):
         await update.message.reply_text(f"❌ Слишком много запросов! Максимум {MAX_LINKS_PER_MINUTE} ссылок в минуту")
         return
@@ -249,7 +228,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             print(f"Ошибка: {e}")
             await update.message.reply_text("❌ Ошибка. Попробуй еще раз")
 
-# Статистика с графиком
 async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_username = f"@{update.effective_user.username}" if update.effective_user.username else ""
     if user_username not in ADMIN_USERNAMES:
@@ -258,7 +236,6 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
     await load_all_data(context)
     
-    # Простой текстовый "график"
     links_bar = "🟢" * min(stats['total_links'], 20)
     clicks_bar = "🔵" * min(stats['total_clicks'] // 10, 20)
     
@@ -276,14 +253,12 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await update.message.reply_text(text)
 
-# График статистики
 async def graph_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_username = f"@{update.effective_user.username}" if update.effective_user.username else ""
     if user_username not in ADMIN_USERNAMES:
         await update.message.reply_text("❌ Только админ может смотреть графики")
         return
         
-    # Простой ASCII график
     graph = f"""
 📈 График активности:
 
@@ -295,7 +270,6 @@ async def graph_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await update.message.reply_text(graph)
 
-# Рассылка уведомлений
 async def broadcast(context, message):
     """Рассылает сообщение всем пользователям"""
     success = 0
@@ -311,7 +285,6 @@ async def broadcast(context, message):
     
     return success, fail
 
-# Команда остановки бота
 async def stopbot_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_username = f"@{update.effective_user.username}" if update.effective_user.username else ""
     if user_username not in ADMIN_USERNAMES:
@@ -321,7 +294,6 @@ async def stopbot_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     success, fail = await broadcast(context, "🔴 Бот уходит на технический перерыв. Скоро вернемся!")
     await update.message.reply_text(f"✅ Уведомление отправлено:\nУспешно: {success}\nНе удалось: {fail}")
 
-# Команда запуска бота
 async def startbot_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_username = f"@{update.effective_user.username}" if update.effective_user.username else ""
     if user_username not in ADMIN_USERNAMES:
@@ -330,8 +302,7 @@ async def startbot_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     success, fail = await broadcast(context, "🟢 Бот снова в сети! Технические работы завершены.")
     await update.message.reply_text(f"✅ Уведомление отправлено:\nУспешно: {success}\nНе удалось: {fail}")
-
-# Кнопки
+    
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     user_id = query.from_user.id
@@ -351,7 +322,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def main():
     app = Application.builder().token(BOT_TOKEN).build()
     
-    # Загружаем данные при старте
     async def post_init(application):
         await load_all_data(application, force=True)
     
