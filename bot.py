@@ -13,12 +13,12 @@ CHANNELS = ["@EasyScriptRBX"]
 ADMIN_USERNAMES = ["@coobaalt"]
 
 # ID каналов (ЗАМЕНИ НА СВОИ)
-LINKS_CHANNEL_ID = "-1003192392842"
-USERS_CHANNEL_ID = "-1003138750808"  
-STATS_CHANNEL_ID = "-1003119775402"
+LINKS_CHANNEL_ID = "-100123456789"
+USERS_CHANNEL_ID = "-100123456790"  
+STATS_CHANNEL_ID = "-100123456791"
 
 # Ограничения
-MAX_LINKS_PER_MINUTE = 5  # Максимум ссылок в минуту
+MAX_LINKS_PER_MINUTE = 3  # Максимум ссылок в минуту
 user_limits = {}  # Кэш ограничений
 
 logging.getLogger("httpx").setLevel(logging.WARNING)
@@ -150,14 +150,14 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_username = f"@{update.effective_user.username}" if update.effective_user.username else ""
     
     if user_username in ADMIN_USERNAMES:
-        text = """🤖 **Команды для админа:**
+        text = f"""🤖 **Команды для админа:**
 
-🔗 Просто кинь ссылку - создам короткую
+🔗 Просто кинь ссылку - создаст короткую
 /start - начать работу  
 /stats - статистика
+/graph - график статистики
 /stopbot - уведомить о тех.перерыве
 /startbot - уведомить о возобновлении
-/graph - график статистики
 
 📊 **Лимиты:** 
 - {MAX_LINKS_PER_MINUTE} ссылок в минуту
@@ -214,7 +214,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             await update.message.reply_text("❌ Ссылка не найдена")
     else:
-        await help_command(update, context)
+        # ПРОСТО МОЛЧИМ - НИЧЕГО НЕ ДЕЛАЕМ
+        return
 
 # Создание ссылки
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -355,7 +356,8 @@ def main():
         await load_all_data(application, force=True)
     
     app.post_init = post_init
-    app.add_handler(CommandHandler(["start", "help"], help_command))
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("stats", stats_command))
     app.add_handler(CommandHandler("graph", graph_command))
     app.add_handler(CommandHandler("stopbot", stopbot_command))
