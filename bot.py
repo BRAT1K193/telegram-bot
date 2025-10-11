@@ -328,6 +328,34 @@ async def debug_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         debug_info += f"{i+1}. {code} → {url[:50]}...\n"
     
     await update.message.reply_text(debug_info)
+
+# ДОБАВЛЯЕМ ФУНКЦИЮ МИГРАЦИИ
+async def migrate_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_username = f"@{update.effective_user.username}" if update.effective_user.username else ""
+    if user_username not in ADMIN_USERNAMES:
+        return
+    
+    # ВРЕМЕННО - ЗАМЕНИ ЭТИ ССЫЛКИ НА СВОИ
+    old_links = {
+        "test1": "https://google.com",
+        "test2": "https://youtube.com",
+        # ДОБАВЬ СЮДА СВОИ РЕАЛЬНЫЕ ССЫЛКИ
+    }
+    
+    migrated = 0
+    for short_code, original_url in old_links.items():
+        try:
+            await save_link_to_channel(context, short_code, original_url)
+            migrated += 1
+            print(f"✅ Мигрирована ссылка: {short_code}")
+            await asyncio.sleep(0.3)
+        except Exception as e:
+            print(f"❌ Ошибка миграции {short_code}: {e}")
+    
+    # Обновляем кэш
+    await load_all_data(context, force=True)
+    
+    await update.message.reply_text(f"✅ Мигрировано {migrated} ссылок! Теперь старые ссылки должны работать.")
     
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -358,7 +386,8 @@ def main():
     app.add_handler(CommandHandler("graph", graph_command))
     app.add_handler(CommandHandler("stopbot", stopbot_command))
     app.add_handler(CommandHandler("startbot", startbot_command))
-    app.add_handler(CommandHandler("debug", debug_command))  # ← ДОБАВИЛИ ЭТУ СТРОЧКУ
+    app.add_handler(CommandHandler("debug", debug_command))
+    app.add_handler(CommandHandler("migrate", migrate_command))  # ← ДОБАВИЛИ ЭТУ СТРОЧКУ
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_handler(CallbackQueryHandler(button_handler))
     
