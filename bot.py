@@ -259,10 +259,11 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     
-    # Регистрируем пользователя
+    # Регистрируем пользователя только если его нет
     if user_id not in users:
         if save_user(user_id):
             users.add(user_id)
+            print(f"✅ Новый пользователь: {user_id}")
 
     if context.args:
         short_code = context.args[0]
@@ -272,7 +273,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if await check_subscription(user_id, context):
                 stats["total_clicks"] += 1
                 update_stats_clicks()
-                await update.message.reply_text(f"{original_url}")
+                # УБРАЛ ЭМОДЗИ - просто отправляем ссылку
+                await update.message.reply_text(original_url)
             else:
                 buttons = []
                 for channel in CHANNELS:
@@ -292,7 +294,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 else:
                     stats["total_clicks"] += 1
                     update_stats_clicks()
-                    await update.message.reply_text(f"{original_url}")
+                    # УБРАЛ ЭМОДЗИ - просто отправляем ссылку
+                    await update.message.reply_text(original_url)
         else:
             await update.message.reply_text("❌ Ссылка не найдена")
     else:
@@ -464,7 +467,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if original_url:
             stats["total_clicks"] += 1
             update_stats_clicks()
-            await query.message.edit_text(f"✅ Спасибо за подписку!\n\n{original_url}")
+            # УБРАЛ ЭМОДЗИ - просто отправляем ссылку
+            await query.message.edit_text(f"Спасибо за подписку!\n\n{original_url}")
         else:
             await query.message.edit_text("❌ Ссылка не найдена")
     else:
