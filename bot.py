@@ -355,6 +355,29 @@ async def migrate_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await load_all_data(context, force=True)
     
     await update.message.reply_text(f"✅ Мигрировано {migrated} ссылок! Теперь старые ссылки должны работать.")
+
+# ДОБАВЛЯЕМ ФУНКЦИЮ ДЛЯ ПРОВЕРКИ КАНАЛА
+async def fix_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_username = f"@{update.effective_user.username}" if update.effective_user.username else ""
+    if user_username not in ADMIN_USERNAMES:
+        return
+    
+    # Проверяем что видит бот в канале
+    try:
+        info = "🔧 **ПРОВЕРКА КАНАЛА:**\n\n"
+        
+        # Смотрим последние сообщения в канале
+        message_count = 0
+        async for message in context.bot.get_chat_history(LINKS_CHANNEL_ID, limit=10):
+            message_count += 1
+            info += f"📨 {message.text}\n"
+        
+        info += f"\n📊 Всего сообщений в канале: {message_count}"
+        info += f"\n🔗 ID канала: {LINKS_CHANNEL_ID}"
+        
+        await update.message.reply_text(info)
+    except Exception as e:
+        await update.message.reply_text(f"❌ Ошибка: {e}")
     
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -386,7 +409,8 @@ def main():
     app.add_handler(CommandHandler("stopbot", stopbot_command))
     app.add_handler(CommandHandler("startbot", startbot_command))
     app.add_handler(CommandHandler("debug", debug_command))
-    app.add_handler(CommandHandler("migrate", migrate_command))  # ← ДОБАВИЛИ ЭТУ СТРОЧКУ
+    app.add_handler(CommandHandler("migrate", migrate_command))
+    app.add_handler(CommandHandler("fix", fix_command)) # ← ДОБАВИЛИ ЭТУ СТРОЧКУ
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_handler(CallbackQueryHandler(button_handler))
     
