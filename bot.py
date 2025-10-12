@@ -14,8 +14,8 @@ CHANNELS = ["@EasyScriptRBX"]
 ADMIN_USERNAMES = ["@coobaalt"]
 
 # Supabase configuration
-SUPABASE_URL = os.environ.get('SUPABASE_URL', 'https://your-project.supabase.co')
-SUPABASE_KEY = os.environ.get('SUPABASE_KEY', 'your-anon-key')
+SUPABASE_URL = os.environ.get('SUPABASE_URL')
+SUPABASE_KEY = os.environ.get('SUPABASE_KEY')
 
 MAX_LINKS_PER_MINUTE = 10
 user_limits = {}
@@ -71,12 +71,12 @@ def load_all_data():
         )
         if response.status_code == 200 and response.json():
             stats_data = response.json()[0]
-            stats = {
+            stats.update({
                 "total_links": stats_data.get('total_links', 0),
                 "total_clicks": stats_data.get('total_clicks', 0)
-            }
+            })
         else:
-            stats = {"total_links": 0, "total_clicks": 0}
+            stats.update({"total_links": 0, "total_clicks": 0})
             print(f"❌ Ошибка загрузки статистики: {response.status_code}")
 
         print(f"✅ Загружено из Supabase: {len(links)} ссылок, {len(users)} пользователей")
@@ -87,9 +87,78 @@ def load_all_data():
         users = set()
         stats = {"total_links": 0, "total_clicks": 0}
 
-def save_link(short_code, original_url):
-    """Сохраняем ссылку в Supabase"""
+def update_stats_links():
+    """Обновляем количество ссылок в Supabase"""
     try:
+        # Сначала получаем текущую запись статистики
+        response = requests.get(
+            f"{SUPABASE_URL}/rest/v1/stats?select=id&order=id.desc&limit=1",
+            headers=supabase_headers()
+        )
+        if response.status_code == 200 and response.json():
+            stats_id = response.json()[0]['id']
+            # Обновляем существующую запись
+            data = {"total_links": stats["total_links"]}
+            response = requests.patch(
+                f"{SUPABASE_URL}/rest/v1/stats?id=eq.{stats_id}",
+                json=data,
+                headers=supabase_headers()
+            )
+            return response.status_code == 200
+        else:
+            # Создаем новую запись если нет существующей
+            data = {
+                "total_links": stats["total_links"],
+                "total_clicks": stats["total_clicks"]
+            }
+            response = requests.post(
+                f"{SUPABASE_URL}/rest/v1/stats",
+                json=data,
+                headers=supabase_headers()
+            )
+            return response.status_code == 201
+    except Exception as e:
+        print(f"❌ Ошибка обновления статистики ссылок: {e}")
+        return False
+
+def update_stats_clicks():
+    """Обновляем количество кликов в Supabase"""
+    try:
+        # Сначала получаем текущую запись статистики
+        response = requests.get(
+            f"{SUPABASE_URL}/rest/v1/stats?select=id&order=id.desc&limit=1",
+            headers=supabase_headers()
+        )
+        if response.status_code == 200 and response.json():
+            stats_id = response.json()[0]['id']
+            # Обновляем существующую запись
+            data = {"total_clicks": stats["total_clicks"]}
+            response = requests.patch(
+                f"{SUPABASE_URL}/rest/v1/stats?id=eq.{stats_id}",
+                json=data,
+                headers=supabase_headers()
+            )
+            return response.status_code == 200
+        else:
+            # Создаем новую запись если нет существующей
+            data = {
+                "total_links": stats["total_links"],
+                "total_clicks": stats["total_clicks"]
+            }
+            response = requests.post(
+                f"{SUPABASE_URL}/rest/v1/stats",
+                json=data,
+                headers=supabase_headers()
+            )
+            return response.status_code == 201
+    except Exception as e:
+        print(f"❌ Ошибка обновления статистики кликов: {e}")
+        return False
+
+def save_link(short_code, original_url):
+    """Сохраняем ссылку в Supabase и обновляем статистику"""
+    try:
+        # Сохраняем ссылку
         data = {
             "short_code": short_code,
             "original_url": original_url
@@ -99,8 +168,14 @@ def save_link(short_code, original_url):
             json=data,
             headers=supabase_headers()
         )
+        
         if response.status_code == 201:
             print(f"✅ Ссылка сохранена в Supabase: {short_code}")
+            
+            # Обновляем статистику
+            stats["total_links"] += 1
+            update_stats_links()
+            
             return True
         else:
             print(f"❌ Ошибка сохранения ссылки: {response.status_code} - {response.text}")
@@ -125,55 +200,6 @@ def save_user(user_id):
             return False
     except Exception as e:
         print(f"❌ Ошибка сохранения пользователя: {e}")
-        return False
-
-def save_stats():
-    """Сохраняем статистику в Supabase"""
-    try:
-        data = {
-            "total_links": stats["total_links"],
-            "total_clicks": stats["total_clicks"]
-        }
-        response = requests.post(
-            f"{SUPABASE_URL}/rest/v1/stats",
-            json=data,
-            headers=supabase_headers()
-        )
-        if response.status_code == 201:
-            return True
-        else:
-            print(f"❌ Ошибка сохранения статистики: {response.status_code}")
-            return False
-    except Exception as e:
-        print(f"❌ Ошибка сохранения статистики: {e}")
-        return False
-
-def update_stats_links():
-    """Обновляем только количество ссылок"""
-    try:
-        data = {"total_links": stats["total_links"]}
-        response = requests.patch(
-            f"{SUPABASE_URL}/rest/v1/stats?order=id.desc&limit=1",
-            json=data,
-            headers=supabase_headers()
-        )
-        return response.status_code == 200
-    except Exception as e:
-        print(f"❌ Ошибка обновления статистики ссылок: {e}")
-        return False
-
-def update_stats_clicks():
-    """Обновляем только количество кликов"""
-    try:
-        data = {"total_clicks": stats["total_clicks"]}
-        response = requests.patch(
-            f"{SUPABASE_URL}/rest/v1/stats?order=id.desc&limit=1",
-            json=data,
-            headers=supabase_headers()
-        )
-        return response.status_code == 200
-    except Exception as e:
-        print(f"❌ Ошибка обновления статистики кликов: {e}")
         return False
 
 # Загружаем данные при старте
@@ -293,8 +319,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             # Сохраняем в Supabase и в память
             if save_link(short_code, original_url):
                 links[short_code] = original_url
-                stats["total_links"] += 1
-                update_stats_links()
                 
                 short_url = f"https://t.me/{context.bot.username}?start={short_code}"
                 await update.message.reply_text(f"✅ Ссылка создана: {short_url}")
@@ -369,7 +393,7 @@ async def stopbot_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Только админ может останавливать бота")
         return
     
-    success, fail = await broadcast(context, "🔴 Бот уходит на технический перерыв. Скво вернемся!")
+    success, fail = await broadcast(context, "🔴 Бот уходит на технический перерыв. Скоро вернемся!")
     await update.message.reply_text(f"✅ Уведомление отправлено:\nУспешно: {success}\nНе удалось: {fail}")
 
 async def startbot_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -427,9 +451,6 @@ async def restore_links(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await asyncio.sleep(0.5)
         except Exception as e:
             print(f"❌ Ошибка восстановления {short_code}: {e}")
-    
-    stats['total_links'] = len(links)
-    update_stats_links()
     
     await update.message.reply_text(f"✅ Восстановлено {restored} старых ссылок! Теперь они должны работать.")
 
