@@ -336,7 +336,7 @@ async def migrate_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     
     # ВРЕМЕННО - ПРОСТЫЕ ТЕСТОВЫЕ ССЫЛКИ
-     old_links = {
+    old_links = {
         "test1": 'loadstring(game:HttpGet("https://pastebin.com/raw/FmDrhT3m"))()',
         "test2": 'loadstring(game:HttpGet("https://pastefy.app/B0oeOAsg/raw"))()',
     }
