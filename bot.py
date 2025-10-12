@@ -335,11 +335,10 @@ async def migrate_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if user_username not in ADMIN_USERNAMES:
         return
     
-    # ВРЕМЕННО - ЗАМЕНИ ЭТИ ССЫЛКИ НА СВОИ
+    # ВРЕМЕННО - ПРОСТЫЕ ТЕСТОВЫЕ ССЫЛКИ
     old_links = {
-        "test1": "https://t.me/+9FC_IHRW1oFlNDYy",
-        "test2": "loadstring(game:HttpGet("https://raw.githubusercontent.com/nootmaus/IceHubMM2/refs/heads/main/FARM", true))()",
-        # ДОБАВЬ СЮДА СВОИ РЕАЛЬНЫЕ ССЫЛКИ
+        "test1": "loadstring(game:HttpGet("https://pastebin.com/raw/FmDrhT3m"))()",
+        "test2": "loadstring(game:HttpGet("https://pastefy.app/B0oeOAsg/raw"))()",
     }
     
     migrated = 0
