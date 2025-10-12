@@ -3,7 +3,9 @@ import random
 import string
 import asyncio
 import time
-from datetime import datetime, timedelta
+import redis
+import os
+from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 
@@ -11,9 +13,9 @@ BOT_TOKEN = "8465329960:AAH1mWkb9EO1eERvTQbR4WD2eTL5JD9IWBk"
 CHANNELS = ["@EasyScriptRBX"]
 ADMIN_USERNAMES = ["@coobaalt"]
 
-LINKS_CHANNEL_ID = "-1003192392842"
-USERS_CHANNEL_ID = "-1003138750808"  
-STATS_CHANNEL_ID = "-1003119775402"
+# Redis from Railway
+REDIS_URL = os.environ.get('REDIS_URL')
+r = redis.Redis.from_url(REDIS_URL)
 
 MAX_LINKS_PER_MINUTE = 10
 user_limits = {}
@@ -21,53 +23,57 @@ user_limits = {}
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.basicConfig(level=logging.INFO)
 
-links = {}
-users = set()
-stats = {"total_links": 0, "total_clicks": 0}
-last_cache_update = 0
-CACHE_TIMEOUT = 900
-
-async def load_all_data(context, force=False):
-    global links, users, stats, last_cache_update
-    
-    if not force and time.time() - last_cache_update < CACHE_TIMEOUT:
-        return
-        
-    print("🔄 Обновление кэша...")
-    
-    links = {}
-    users = set()
-    
+def load_all_data():
+    """Загружаем все данные из Redis"""
     try:
-        async for message in context.bot.get_chat_history(LINKS_CHANNEL_ID, limit=1000):
-            if message.text and message.text.startswith("LINK|||"):
-                parts = message.text.split("|||")
-                if len(parts) == 3:
-                    short_code, original_url = parts[1], parts[2]
-                    links[short_code] = original_url
+        # Загружаем ссылки
+        links_data = r.hgetall('links')
+        links = {code.decode('utf-8'): url.decode('utf-8') for code, url in links_data.items()}
         
-        async for message in context.bot.get_chat_history(USERS_CHANNEL_ID, limit=1000):
-            if message.text and message.text.startswith("USER|||"):
-                user_id = int(message.text.split("|||")[1])
-                users.add(user_id)
+        # Загружаем пользователей
+        users_data = r.smembers('users')
+        users = {int(user_id.decode('utf-8')) for user_id in users_data}
         
-        async for message in context.bot.get_chat_history(STATS_CHANNEL_ID, limit=100):
-            if message.text and message.text.startswith("STATS|||"):
-                parts = message.text.split("|||")
-                if len(parts) == 3:
-                    stats["total_links"] = int(parts[1])
-                    stats["total_clicks"] = int(parts[2])
-                    break
+        # Загружаем статистику
+        total_links = r.get('total_links')
+        total_clicks = r.get('total_clicks')
         
-        print(f"✅ Загружено из каналов: {len(links)} ссылок, {len(users)} пользователей")
+        stats = {
+            'total_links': int(total_links) if total_links else 0,
+            'total_clicks': int(total_clicks) if total_clicks else 0
+        }
+        
+        print(f"✅ Загружено из Redis: {len(links)} ссылок, {len(users)} пользователей")
+        return links, users, stats
         
     except Exception as e:
-        print(f"❌ Ошибка загрузки из каналов: {e}")
-        links = {}
-        users = set()
-        stats = {"total_links": 0, "total_clicks": 0}
-    
-    last_cache_update = time.time()
+        print(f"❌ Ошибка загрузки из Redis: {e}")
+        return {}, set(), {'total_links': 0, 'total_clicks': 0}
+
+def save_link(short_code, original_url):
+    """Сохраняем ссылку в Redis"""
+    try:
+        r.hset('links', short_code, original_url)
+        r.incr('total_links')
+    except Exception as e:
+        print(f"❌ Ошибка сохранения ссылки: {e}")
+
+def save_user(user_id):
+    """Сохраняем пользователя в Redis"""
+    try:
+        r.sadd('users', user_id)
+    except Exception as e:
+        print(f"❌ Ошибка сохранения пользователя: {e}")
+
+def save_click():
+    """Сохраняем клик в Redis"""
+    try:
+        r.incr('total_clicks')
+    except Exception as e:
+        print(f"❌ Ошибка сохранения клика: {e}")
+
+# Загружаем данные при старте
+links, users, stats = load_all_data()
 
 def check_rate_limit(user_id):
     now = time.time()
@@ -81,39 +87,6 @@ def check_rate_limit(user_id):
     
     user_limits[user_id].append(now)
     return True
-
-async def save_link_to_channel(context, short_code, original_url):
-    try:
-        await context.bot.send_message(
-            chat_id=LINKS_CHANNEL_ID,
-            text=f"LINK|||{short_code}|||{original_url}"
-        )
-        return True
-    except Exception as e:
-        print(f"Ошибка сохранения ссылки: {e}")
-        return False
-
-async def save_user_to_channel(context, user_id):
-    try:
-        await context.bot.send_message(
-            chat_id=USERS_CHANNEL_ID,
-            text=f"USER|||{user_id}"
-        )
-        return True
-    except Exception as e:
-        print(f"Ошибка сохранения пользователя: {e}")
-        return False
-
-async def save_stats_to_channel(context):
-    try:
-        await context.bot.send_message(
-            chat_id=STATS_CHANNEL_ID,
-            text=f"STATS|||{stats['total_links']}|||{stats['total_clicks']}"
-        )
-        return True
-    except Exception as e:
-        print(f"Ошибка сохранения статистики: {e}")
-        return False
 
 async def check_subscription(user_id, context):
     for channel in CHANNELS:
@@ -140,13 +113,10 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 /graph - график статистики
 /stopbot - уведомить о тех.перерыве
 /startbot - уведомить о возобновлении
-/fix - проверить канал
-/reload - перезагрузить данные
-/restore - восстановить старые ссылки
 
 📊 Лимиты:
 - {MAX_LINKS_PER_MINUTE} ссылок в минуту
-- Авто-кэш каждые 15 минут"""
+- 💾 Данные в Redis"""
     else:
         text = """🤖 Команды:
 
@@ -158,11 +128,10 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     
-    await load_all_data(context)
-    
+    # Регистрируем пользователя
     if user_id not in users:
+        save_user(user_id)
         users.add(user_id)
-        await save_user_to_channel(context, user_id)
 
     if context.args:
         short_code = context.args[0]
@@ -170,8 +139,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         if original_url:
             if await check_subscription(user_id, context):
-                stats["total_clicks"] += 1
-                await save_stats_to_channel(context)
+                save_click()
+                stats['total_clicks'] += 1
                 await update.message.reply_text(f"{original_url}")
             else:
                 buttons = []
@@ -190,8 +159,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         reply_markup=InlineKeyboardMarkup(buttons)
                     )
                 else:
-                    stats["total_clicks"] += 1
-                    await save_stats_to_channel(context)
+                    save_click()
+                    stats['total_clicks'] += 1
                     await update.message.reply_text(f"{original_url}")
         else:
             await update.message.reply_text("❌ Ссылка не найдена")
@@ -216,11 +185,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         short_code = generate_short_code()
 
         try:
+            # Сохраняем в Redis и в память
+            save_link(short_code, original_url)
             links[short_code] = original_url
-            await save_link_to_channel(context, short_code, original_url)
-            
-            stats["total_links"] += 1
-            await save_stats_to_channel(context)
+            stats['total_links'] += 1
             
             short_url = f"https://t.me/{context.bot.username}?start={short_code}"
             await update.message.reply_text(f"✅ Ссылка создана: {short_url}")
@@ -233,8 +201,10 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if user_username not in ADMIN_USERNAMES:
         await update.message.reply_text("❌ Только админ может смотреть статистику")
         return
-        
-    await load_all_data(context)
+    
+    # Обновляем данные из Redis
+    global links, users, stats
+    links, users, stats = load_all_data()
     
     links_bar = "🟢" * min(stats['total_links'], 20)
     clicks_bar = "🔵" * min(stats['total_clicks'] // 10, 20)
@@ -249,7 +219,8 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 👥 Пользователей: {len(users)}
 
-⚡ Лимит: {MAX_LINKS_PER_MINUTE}/мин"""
+⚡ Лимит: {MAX_LINKS_PER_MINUTE}/мин
+💾 Данные в Redis"""
     
     await update.message.reply_text(text)
 
@@ -308,71 +279,24 @@ async def debug_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if user_username not in ADMIN_USERNAMES:
         return
     
-    await load_all_data(context, force=True)
+    # Обновляем данные
+    global links, users, stats
+    links, users, stats = load_all_data()
     
     debug_info = f"""
 🔍 **ДЕБАГ ИНФО:**
 
-📊 Загружено ссылок: {len(links)}
-👥 Загружено пользователей: {len(users)}
-🕐 Последнее обновление кэша: {time.time() - last_cache_update:.0f} сек назад
+📊 Ссылок в Redis: {len(links)}
+👥 Пользователей: {len(users)}
+📈 Статистика: {stats}
 
-📨 Примеры ссылок в памяти:
+📨 Примеры ссылок:
 """
     
     for i, (code, url) in enumerate(list(links.items())[:5]):
         debug_info += f"{i+1}. {code} → {url[:50]}...\n"
     
     await update.message.reply_text(debug_info)
-
-async def migrate_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_username = f"@{update.effective_user.username}" if update.effective_user.username else ""
-    if user_username not in ADMIN_USERNAMES:
-        return
-    
-    await update.message.reply_text("ℹ️ Миграция больше не нужна - бот работает с каналами")
-
-async def fix_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_username = f"@{update.effective_user.username}" if update.effective_user.username else ""
-    if user_username not in ADMIN_USERNAMES:
-        return
-    
-    try:
-        info = "🔧 **ПРОВЕРКА КАНАЛА:**\n\n"
-        
-        message_count = 0
-        async for message in context.bot.get_chat_history(LINKS_CHANNEL_ID, limit=10):
-            message_count += 1
-            info += f"📨 {message.text}\n"
-        
-        info += f"\n📊 Всего сообщений в канале: {message_count}"
-        info += f"\n🔗 ID канала: {LINKS_CHANNEL_ID}"
-        
-        await update.message.reply_text(info)
-    except Exception as e:
-        await update.message.reply_text(f"❌ Ошибка: {e}")
-
-async def reload_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_username = f"@{update.effective_user.username}" if update.effective_user.username else ""
-    if user_username not in ADMIN_USERNAMES:
-        return
-    
-    await load_all_data(context, force=True)
-    
-    info = f"""
-🔄 ПЕРЕЗАГРУЗКА ДАННЫХ:
-
-📊 Ссылок: {len(links)}
-👥 Пользователей: {len(users)}
-📈 Статистика: {stats}
-
-🔍 Первые 5 ссылок:
-"""
-    
-    for i, (code, url) in enumerate(list(links.items())[:5]):
-        info += f"{i+1}. {code} → {url}\n"
-    
-    await update.message.reply_text(info)
 
 async def restore_links(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_username = f"@{update.effective_user.username}" if update.effective_user.username else ""
@@ -387,7 +311,7 @@ async def restore_links(update: Update, context: ContextTypes.DEFAULT_TYPE):
     restored = 0
     for short_code, original_url in old_links.items():
         try:
-            await save_link_to_channel(context, short_code, original_url)
+            save_link(short_code, original_url)
             links[short_code] = original_url
             restored += 1
             print(f"✅ Восстановлена: {short_code} → {original_url}")
@@ -395,8 +319,7 @@ async def restore_links(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             print(f"❌ Ошибка восстановления {short_code}: {e}")
     
-    stats["total_links"] = len(links)
-    await save_stats_to_channel(context)
+    stats['total_links'] = len(links)
     
     await update.message.reply_text(f"✅ Восстановлено {restored} старых ссылок! Теперь они должны работать.")
 
@@ -408,8 +331,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if await check_subscription(user_id, context):
         original_url = links.get(short_code)
         if original_url:
-            stats["total_clicks"] += 1
-            await save_stats_to_channel(context)
+            save_click()
+            stats['total_clicks'] += 1
             await query.message.edit_text(f"✅ Спасибо за подписку!\n\n{original_url}")
         else:
             await query.message.edit_text("❌ Ссылка не найдена")
@@ -419,10 +342,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def main():
     app = Application.builder().token(BOT_TOKEN).build()
     
-    async def post_init(application):
-        await load_all_data(application, force=True)
-    
-    app.post_init = post_init
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("stats", stats_command))
@@ -430,14 +349,11 @@ def main():
     app.add_handler(CommandHandler("stopbot", stopbot_command))
     app.add_handler(CommandHandler("startbot", startbot_command))
     app.add_handler(CommandHandler("debug", debug_command))
-    app.add_handler(CommandHandler("migrate", migrate_command))
-    app.add_handler(CommandHandler("fix", fix_command))
-    app.add_handler(CommandHandler("reload", reload_command))
     app.add_handler(CommandHandler("restore", restore_links))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_handler(CallbackQueryHandler(button_handler))
     
-    print("🤖 Бот запущен и работает с каналами!")
+    print("🤖 Бот запущен! Данные сохраняются в Redis")
     app.run_polling()
 
 if __name__ == "__main__":
