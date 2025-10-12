@@ -36,40 +36,16 @@ async def load_all_data(context, force=False):
         
     print("🔄 Обновление кэша...")
     
-    new_links = {}
-    try:
-        async for message in context.bot.get_chat_history(LINKS_CHANNEL_ID, limit=1000):
-            if message.text and message.text.startswith("LINK|||"):
-                _, short_code, original_url = message.text.split("|||", 2)
-                new_links[short_code] = original_url
-    except Exception as e:
-        print(f"Ошибка загрузки ссылок: {e}")
-
-    new_users = set()
-    try:
-        async for message in context.bot.get_chat_history(USERS_CHANNEL_ID, limit=10000):
-            if message.text and message.text.startswith("USER|||"):
-                _, user_id = message.text.split("|||", 1)
-                new_users.add(int(user_id))
-    except Exception as e:
-        print(f"Ошибка загрузки пользователей: {e}")
-
-    new_stats = {"total_links": 0, "total_clicks": 0}
-    try:
-        async for message in context.bot.get_chat_history(STATS_CHANNEL_ID, limit=1):
-            if message.text and message.text.startswith("STATS|||"):
-                _, links_count, clicks_count = message.text.split("|||", 2)
-                new_stats = {"total_links": int(links_count), "total_clicks": int(clicks_count)}
-                break
-    except Exception as e:
-        print(f"Ошибка загрузки статистики: {e}")
-    
-    links = new_links
-    users = new_users
-    stats = new_stats
+    # ВРЕМЕННО: используем тестовые данные вместо каналов
+    links = {
+        "test1": "https://google.com",
+        "test2": "https://youtube.com",
+    }
+    users = {8064464182}  # твой user_id
+    stats = {"total_links": 2, "total_clicks": 0}
     last_cache_update = time.time()
     
-    print(f"✅ Кэш обновлен: {len(links)} ссылок, {len(users)} пользователей")
+    print(f"✅ Загружено тестовых данных: {len(links)} ссылок")
 
 def check_rate_limit(user_id):
     now = time.time()
@@ -409,8 +385,7 @@ def main():
     app.add_handler(CommandHandler("stopbot", stopbot_command))
     app.add_handler(CommandHandler("startbot", startbot_command))
     app.add_handler(CommandHandler("debug", debug_command))
-    app.add_handler(CommandHandler("migrate", migrate_command))
-    app.add_handler(CommandHandler("fix", fix_command)) # ← ДОБАВИЛИ ЭТУ СТРОЧКУ
+    app.add_handler(CommandHandler("migrate", migrate_command)) # ← ДОБАВИЛИ ЭТУ СТРОЧКУ
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_handler(CallbackQueryHandler(button_handler))
     
