@@ -1,5 +1,3 @@
-# 🔧 ИСПРАВЛЕННЫЙ КОД:
-
 import logging
 import random
 import string
@@ -142,6 +140,9 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 /graph - график статистики
 /stopbot - уведомить о тех.перерыве
 /startbot - уведомить о возобновлении
+/fix - проверить канал
+/reload - перезагрузить данные
+/restore - восстановить старые ссылки
 
 📊 Лимиты:
 - {MAX_LINKS_PER_MINUTE} ссылок в минуту
@@ -350,7 +351,55 @@ async def fix_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(info)
     except Exception as e:
         await update.message.reply_text(f"❌ Ошибка: {e}")
+
+async def reload_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_username = f"@{update.effective_user.username}" if update.effective_user.username else ""
+    if user_username not in ADMIN_USERNAMES:
+        return
     
+    await load_all_data(context, force=True)
+    
+    info = f"""
+🔄 ПЕРЕЗАГРУЗКА ДАННЫХ:
+
+📊 Ссылок: {len(links)}
+👥 Пользователей: {len(users)}
+📈 Статистика: {stats}
+
+🔍 Первые 5 ссылок:
+"""
+    
+    for i, (code, url) in enumerate(list(links.items())[:5]):
+        info += f"{i+1}. {code} → {url}\n"
+    
+    await update.message.reply_text(info)
+
+async def restore_links(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_username = f"@{update.effective_user.username}" if update.effective_user.username else ""
+    if user_username not in ADMIN_USERNAMES:
+        return
+    
+    old_links = {
+        "test1": "https://google.com",
+        "test2": "https://youtube.com", 
+    }
+    
+    restored = 0
+    for short_code, original_url in old_links.items():
+        try:
+            await save_link_to_channel(context, short_code, original_url)
+            links[short_code] = original_url
+            restored += 1
+            print(f"✅ Восстановлена: {short_code} → {original_url}")
+            await asyncio.sleep(0.5)
+        except Exception as e:
+            print(f"❌ Ошибка восстановления {short_code}: {e}")
+    
+    stats["total_links"] = len(links)
+    await save_stats_to_channel(context)
+    
+    await update.message.reply_text(f"✅ Восстановлено {restored} старых ссылок! Теперь они должны работать.")
+
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     user_id = query.from_user.id
@@ -382,6 +431,9 @@ def main():
     app.add_handler(CommandHandler("startbot", startbot_command))
     app.add_handler(CommandHandler("debug", debug_command))
     app.add_handler(CommandHandler("migrate", migrate_command))
+    app.add_handler(CommandHandler("fix", fix_command))
+    app.add_handler(CommandHandler("reload", reload_command))
+    app.add_handler(CommandHandler("restore", restore_links))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_handler(CallbackQueryHandler(button_handler))
     
