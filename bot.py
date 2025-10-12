@@ -338,7 +338,7 @@ async def migrate_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # ВРЕМЕННО - ЗАМЕНИ ЭТИ ССЫЛКИ НА СВОИ
     old_links = {
         "test1": "https://t.me/+9FC_IHRW1oFlNDYy",
-        "test2": "loadstring(game:HttpGet("https://raw.githubusercontent.com/ily123950/Vulkan/refs/heads/main/Tr"))()",
+        "test2": "loadstring(game:HttpGet("https://raw.githubusercontent.com/nootmaus/IceHubMM2/refs/heads/main/FARM", true))()",
         # ДОБАВЬ СЮДА СВОИ РЕАЛЬНЫЕ ССЫЛКИ
     }
     
