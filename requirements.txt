@@ -1,1 +1,2 @@
 python-telegram-bot
+redis==4.5.4
