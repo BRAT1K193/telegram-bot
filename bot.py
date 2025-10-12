@@ -36,23 +36,50 @@ async def load_all_data(context, force=False):
         
     print("🔄 Обновление кэша...")
     
-    # ВРЕМЕННО: используем тестовые данные вместо каналов
-    links = {
-        "test1": "https://google.com",
-        "test2": "https://youtube.com",
-    }
-    users = {8064464182}  # твой user_id
-    stats = {"total_links": 2, "total_clicks": 0}
-    last_cache_update = time.time()
+    # Загружаем данные из каналов
+    links = {}
+    users = set()
     
-    print(f"✅ Загружено тестовых данных: {len(links)} ссылок")
+    try:
+        # Загружаем ссылки из канала
+        async for message in context.bot.get_chat_history(LINKS_CHANNEL_ID, limit=1000):
+            if message.text and message.text.startswith("LINK|||"):
+                parts = message.text.split("|||")
+                if len(parts) == 3:
+                    short_code, original_url = parts[1], parts[2]
+                    links[short_code] = original_url
+        
+        # Загружаем пользователей из канала
+        async for message in context.bot.get_chat_history(USERS_CHANNEL_ID, limit=1000):
+            if message.text and message.text.startswith("USER|||"):
+                user_id = int(message.text.split("|||")[1])
+                users.add(user_id)
+        
+        # Загружаем статистику из канала
+        async for message in context.bot.get_chat_history(STATS_CHANNEL_ID, limit=100):
+            if message.text and message.text.startswith("STATS|||"):
+                parts = message.text.split("|||")
+                if len(parts) == 3:
+                    stats["total_links"] = int(parts[1])
+                    stats["total_clicks"] = int(parts[2])
+                    break
+        
+        print(f"✅ Загружено из каналов: {len(links)} ссылок, {len(users)} пользователей")
+        
+    except Exception as e:
+        print(f"❌ Ошибка загрузки из каналов: {e}")
+        # Если не удалось загрузить, используем пустые данные
+        links = {}
+        users = set()
+        stats = {"total_links": 0, "total_clicks": 0}
+    
+    last_cache_update = time.time()
 
 def check_rate_limit(user_id):
     now = time.time()
     if user_id not in user_limits:
         user_limits[user_id] = []
     
-
     user_limits[user_id] = [t for t in user_limits[user_id] if now - t < 60]
     
     if len(user_limits[user_id]) >= MAX_LINKS_PER_MINUTE:
@@ -122,7 +149,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 📊 Лимиты:
 - {MAX_LINKS_PER_MINUTE} ссылок в минуту
-- Авто-кэш каждые 5 минут"""
+- Авто-кэш каждые 15 минут"""
     else:
         text = """🤖 Команды:
 
@@ -205,7 +232,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("❌ Ошибка. Попробуй еще раз")
 
 async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_username = f"@{update.effective_user.username}" if update.effective_user.username else ""
+    user_username = f"@"{update.effective_user.username}" if update.effective_user.username else ""
     if user_username not in ADMIN_USERNAMES:
         await update.message.reply_text("❌ Только админ может смотреть статистику")
         return
@@ -230,7 +257,7 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(text)
 
 async def graph_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_username = f"@{update.effective_user.username}" if update.effective_user.username else ""
+    user_username = f"@"{update.effective_user.username}" if update.effective_user.username else ""
     if user_username not in ADMIN_USERNAMES:
         await update.message.reply_text("❌ Только админ может смотреть графики")
         return
@@ -262,7 +289,7 @@ async def broadcast(context, message):
     return success, fail
 
 async def stopbot_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_username = f"@{update.effective_user.username}" if update.effective_user.username else ""
+    user_username = f"@"{update.effective_user.username}" if update.effective_user.username else ""
     if user_username not in ADMIN_USERNAMES:
         await update.message.reply_text("❌ Только админ может останавливать бота")
         return
@@ -271,7 +298,7 @@ async def stopbot_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"✅ Уведомление отправлено:\nУспешно: {success}\nНе удалось: {fail}")
 
 async def startbot_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_username = f"@{update.effective_user.username}" if update.effective_user.username else ""
+    user_username = f"@"{update.effective_user.username}" if update.effective_user.username else ""
     if user_username not in ADMIN_USERNAMES:
         await update.message.reply_text("❌ Только админ может запускать бота")
         return
@@ -279,16 +306,13 @@ async def startbot_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     success, fail = await broadcast(context, "🟢 Бот снова в сети! Технические работы завершены.")
     await update.message.reply_text(f"✅ Уведомление отправлено:\nУспешно: {success}\nНе удалось: {fail}")
 
-# ДОБАВЛЯЕМ ЭТУ ФУНКЦИЮ ДЛЯ ДЕБАГА
 async def debug_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_username = f"@{update.effective_user.username}" if update.effective_user.username else ""
+    user_username = f"@"{update.effective_user.username}" if update.effective_user.username else ""
     if user_username not in ADMIN_USERNAMES:
         return
     
-    # Проверяем загрузку данных
     await load_all_data(context, force=True)
     
-    # Смотрим что в каналах
     debug_info = f"""
 🔍 **ДЕБАГ ИНФО:**
 
@@ -299,50 +323,26 @@ async def debug_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 📨 Примеры ссылок в памяти:
 """
     
-    # Показываем первые 5 ссылок
     for i, (code, url) in enumerate(list(links.items())[:5]):
         debug_info += f"{i+1}. {code} → {url[:50]}...\n"
     
     await update.message.reply_text(debug_info)
 
-# ДОБАВЛЯЕМ ФУНКЦИЮ МИГРАЦИИ
 async def migrate_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_username = f"@{update.effective_user.username}" if update.effective_user.username else ""
+    user_username = f"@"{update.effective_user.username}" if update.effective_user.username else ""
     if user_username not in ADMIN_USERNAMES:
         return
     
-    # ВРЕМЕННО - ПРОСТЫЕ ТЕСТОВЫЕ ССЫЛКИ
-    old_links = {
-        "test1": 'loadstring(game:HttpGet("https://pastebin.com/raw/FmDrhT3m"))()',
-        "test2": 'loadstring(game:HttpGet("https://pastefy.app/B0oeOAsg/raw"))()',
-    }
-    
-    migrated = 0
-    for short_code, original_url in old_links.items():
-        try:
-            await save_link_to_channel(context, short_code, original_url)
-            migrated += 1
-            print(f"✅ Мигрирована ссылка: {short_code}")
-            await asyncio.sleep(0.3)
-        except Exception as e:
-            print(f"❌ Ошибка миграции {short_code}: {e}")
-    
-    # Обновляем кэш
-    await load_all_data(context, force=True)
-    
-    await update.message.reply_text(f"✅ Мигрировано {migrated} ссылок! Теперь старые ссылки должны работать.")
+    await update.message.reply_text("ℹ️ Миграция больше не нужна - бот работает с каналами")
 
-# ДОБАВЛЯЕМ ФУНКЦИЮ ДЛЯ ПРОВЕРКИ КАНАЛА
 async def fix_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_username = f"@{update.effective_user.username}" if update.effective_user.username else ""
+    user_username = f"@"{update.effective_user.username}" if update.effective_user.username else ""
     if user_username not in ADMIN_USERNAMES:
         return
     
-    # Проверяем что видит бот в канале
     try:
         info = "🔧 **ПРОВЕРКА КАНАЛА:**\n\n"
         
-        # Смотрим последние сообщения в канале
         message_count = 0
         async for message in context.bot.get_chat_history(LINKS_CHANNEL_ID, limit=10):
             message_count += 1
@@ -385,11 +385,11 @@ def main():
     app.add_handler(CommandHandler("stopbot", stopbot_command))
     app.add_handler(CommandHandler("startbot", startbot_command))
     app.add_handler(CommandHandler("debug", debug_command))
-    app.add_handler(CommandHandler("migrate", migrate_command)) # ← ДОБАВИЛИ ЭТУ СТРОЧКУ
+    app.add_handler(CommandHandler("migrate", migrate_command))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_handler(CallbackQueryHandler(button_handler))
     
-    print("Бот запущен...")
+    print("🤖 Бот запущен и работает с каналами!")
     app.run_polling()
 
 if __name__ == "__main__":
