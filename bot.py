@@ -3,7 +3,7 @@ import random
 import string
 import asyncio
 import time
-import redis
+import requests
 import os
 from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -13,23 +13,9 @@ BOT_TOKEN = "8465329960:AAH1mWkb9EO1eERvTQbR4WD2eTL5JD9IWBk"
 CHANNELS = ["@EasyScriptRBX"]
 ADMIN_USERNAMES = ["@coobaalt"]
 
-# Проверяем переменные Redis
-REDIS_URL = os.environ.get('REDIS_URL')
-
-print(f"🔍 REDIS_URL: {REDIS_URL}")  # Для дебага
-
-if not REDIS_URL:
-    print("❌ REDIS_URL не найден! Используем память")
-    USE_REDIS = False
-else:
-    try:
-        r = redis.Redis.from_url(REDIS_URL)
-        r.ping()  # Проверяем подключение
-        print("✅ Redis подключен!")
-        USE_REDIS = True
-    except Exception as e:
-        print(f"❌ Ошибка подключения к Redis: {e}")
-        USE_REDIS = False
+# Supabase configuration
+SUPABASE_URL = os.environ.get('SUPABASE_URL', 'https://your-project.supabase.co')
+SUPABASE_KEY = os.environ.get('SUPABASE_KEY', 'your-anon-key')
 
 MAX_LINKS_PER_MINUTE = 10
 user_limits = {}
@@ -37,64 +23,161 @@ user_limits = {}
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.basicConfig(level=logging.INFO)
 
+# Глобальные переменные
+links = {}
+users = set()
+stats = {"total_links": 0, "total_clicks": 0}
+
+def supabase_headers():
+    return {
+        "apikey": SUPABASE_KEY,
+        "Authorization": f"Bearer {SUPABASE_KEY}",
+        "Content-Type": "application/json"
+    }
+
 def load_all_data():
-    """Загружаем все данные из Redis или используем память"""
-    if not USE_REDIS:
-        print("💾 Используем оперативную память")
-        return {}, set(), {'total_links': 0, 'total_clicks': 0}
+    """Загружаем все данные из Supabase"""
+    global links, users, stats
     
     try:
         # Загружаем ссылки
-        links_data = r.hgetall('links')
-        links = {code.decode('utf-8'): url.decode('utf-8') for code, url in links_data.items()}
-        
+        response = requests.get(
+            f"{SUPABASE_URL}/rest/v1/links?select=short_code,original_url",
+            headers=supabase_headers()
+        )
+        if response.status_code == 200:
+            links_data = response.json()
+            links = {item['short_code']: item['original_url'] for item in links_data}
+        else:
+            links = {}
+            print(f"❌ Ошибка загрузки ссылок: {response.status_code}")
+
         # Загружаем пользователей
-        users_data = r.smembers('users')
-        users = {int(user_id.decode('utf-8')) for user_id in users_data}
-        
+        response = requests.get(
+            f"{SUPABASE_URL}/rest/v1/users?select=user_id",
+            headers=supabase_headers()
+        )
+        if response.status_code == 200:
+            users_data = response.json()
+            users = {item['user_id'] for item in users_data}
+        else:
+            users = set()
+            print(f"❌ Ошибка загрузки пользователей: {response.status_code}")
+
         # Загружаем статистику
-        total_links = r.get('total_links')
-        total_clicks = r.get('total_clicks')
-        
-        stats = {
-            'total_links': int(total_links) if total_links else 0,
-            'total_clicks': int(total_clicks) if total_clicks else 0
-        }
-        
-        print(f"✅ Загружено из Redis: {len(links)} ссылок, {len(users)} пользователей")
-        return links, users, stats
+        response = requests.get(
+            f"{SUPABASE_URL}/rest/v1/stats?select=total_links,total_clicks&order=id.desc&limit=1",
+            headers=supabase_headers()
+        )
+        if response.status_code == 200 and response.json():
+            stats_data = response.json()[0]
+            stats = {
+                "total_links": stats_data.get('total_links', 0),
+                "total_clicks": stats_data.get('total_clicks', 0)
+            }
+        else:
+            stats = {"total_links": 0, "total_clicks": 0}
+            print(f"❌ Ошибка загрузки статистики: {response.status_code}")
+
+        print(f"✅ Загружено из Supabase: {len(links)} ссылок, {len(users)} пользователей")
         
     except Exception as e:
-        print(f"❌ Ошибка загрузки из Redis: {e}")
-        return {}, set(), {'total_links': 0, 'total_clicks': 0}
+        print(f"❌ Ошибка загрузки из Supabase: {e}")
+        links = {}
+        users = set()
+        stats = {"total_links": 0, "total_clicks": 0}
 
 def save_link(short_code, original_url):
-    """Сохраняем ссылку"""
-    if USE_REDIS:
-        try:
-            r.hset('links', short_code, original_url)
-            r.incr('total_links')
-        except Exception as e:
-            print(f"❌ Ошибка сохранения ссылки в Redis: {e}")
+    """Сохраняем ссылку в Supabase"""
+    try:
+        data = {
+            "short_code": short_code,
+            "original_url": original_url
+        }
+        response = requests.post(
+            f"{SUPABASE_URL}/rest/v1/links",
+            json=data,
+            headers=supabase_headers()
+        )
+        if response.status_code == 201:
+            print(f"✅ Ссылка сохранена в Supabase: {short_code}")
+            return True
+        else:
+            print(f"❌ Ошибка сохранения ссылки: {response.status_code} - {response.text}")
+            return False
+    except Exception as e:
+        print(f"❌ Ошибка сохранения ссылки: {e}")
+        return False
 
 def save_user(user_id):
-    """Сохраняем пользователя"""
-    if USE_REDIS:
-        try:
-            r.sadd('users', user_id)
-        except Exception as e:
-            print(f"❌ Ошибка сохранения пользователя в Redis: {e}")
+    """Сохраняем пользователя в Supabase"""
+    try:
+        data = {"user_id": user_id}
+        response = requests.post(
+            f"{SUPABASE_URL}/rest/v1/users",
+            json=data,
+            headers=supabase_headers()
+        )
+        if response.status_code in [201, 409]:  # 409 = уже существует
+            return True
+        else:
+            print(f"❌ Ошибка сохранения пользователя: {response.status_code}")
+            return False
+    except Exception as e:
+        print(f"❌ Ошибка сохранения пользователя: {e}")
+        return False
 
-def save_click():
-    """Сохраняем клик"""
-    if USE_REDIS:
-        try:
-            r.incr('total_clicks')
-        except Exception as e:
-            print(f"❌ Ошибка сохранения клика в Redis: {e}")
+def save_stats():
+    """Сохраняем статистику в Supabase"""
+    try:
+        data = {
+            "total_links": stats["total_links"],
+            "total_clicks": stats["total_clicks"]
+        }
+        response = requests.post(
+            f"{SUPABASE_URL}/rest/v1/stats",
+            json=data,
+            headers=supabase_headers()
+        )
+        if response.status_code == 201:
+            return True
+        else:
+            print(f"❌ Ошибка сохранения статистики: {response.status_code}")
+            return False
+    except Exception as e:
+        print(f"❌ Ошибка сохранения статистики: {e}")
+        return False
+
+def update_stats_links():
+    """Обновляем только количество ссылок"""
+    try:
+        data = {"total_links": stats["total_links"]}
+        response = requests.patch(
+            f"{SUPABASE_URL}/rest/v1/stats?order=id.desc&limit=1",
+            json=data,
+            headers=supabase_headers()
+        )
+        return response.status_code == 200
+    except Exception as e:
+        print(f"❌ Ошибка обновления статистики ссылок: {e}")
+        return False
+
+def update_stats_clicks():
+    """Обновляем только количество кликов"""
+    try:
+        data = {"total_clicks": stats["total_clicks"]}
+        response = requests.patch(
+            f"{SUPABASE_URL}/rest/v1/stats?order=id.desc&limit=1",
+            json=data,
+            headers=supabase_headers()
+        )
+        return response.status_code == 200
+    except Exception as e:
+        print(f"❌ Ошибка обновления статистики кликов: {e}")
+        return False
 
 # Загружаем данные при старте
-links, users, stats = load_all_data()
+load_all_data()
 
 def check_rate_limit(user_id):
     now = time.time()
@@ -126,7 +209,6 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_username = f"@{update.effective_user.username}" if update.effective_user.username else ""
     
     if user_username in ADMIN_USERNAMES:
-        storage_type = "Redis" if USE_REDIS else "оперативную память"
         text = f"""🤖 Команды для админа:
 
 🔗 Просто кинь ссылку - создам короткую
@@ -139,7 +221,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 📊 Лимиты:
 - {MAX_LINKS_PER_MINUTE} ссылок в минуту
-- 💾 Данные в {storage_type}"""
+- 💾 Данные в Supabase"""
     else:
         text = """🤖 Команды:
 
@@ -153,8 +235,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # Регистрируем пользователя
     if user_id not in users:
-        save_user(user_id)
-        users.add(user_id)
+        if save_user(user_id):
+            users.add(user_id)
 
     if context.args:
         short_code = context.args[0]
@@ -162,8 +244,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         if original_url:
             if await check_subscription(user_id, context):
-                save_click()
-                stats['total_clicks'] += 1
+                stats["total_clicks"] += 1
+                update_stats_clicks()
                 await update.message.reply_text(f"{original_url}")
             else:
                 buttons = []
@@ -182,8 +264,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         reply_markup=InlineKeyboardMarkup(buttons)
                     )
                 else:
-                    save_click()
-                    stats['total_clicks'] += 1
+                    stats["total_clicks"] += 1
+                    update_stats_clicks()
                     await update.message.reply_text(f"{original_url}")
         else:
             await update.message.reply_text("❌ Ссылка не найдена")
@@ -208,13 +290,16 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         short_code = generate_short_code()
 
         try:
-            # Сохраняем в Redis и в память
-            save_link(short_code, original_url)
-            links[short_code] = original_url
-            stats['total_links'] += 1
-            
-            short_url = f"https://t.me/{context.bot.username}?start={short_code}"
-            await update.message.reply_text(f"✅ Ссылка создана: {short_url}")
+            # Сохраняем в Supabase и в память
+            if save_link(short_code, original_url):
+                links[short_code] = original_url
+                stats["total_links"] += 1
+                update_stats_links()
+                
+                short_url = f"https://t.me/{context.bot.username}?start={short_code}"
+                await update.message.reply_text(f"✅ Ссылка создана: {short_url}")
+            else:
+                await update.message.reply_text("❌ Ошибка сохранения ссылки")
         except Exception as e:
             print(f"Ошибка: {e}")
             await update.message.reply_text("❌ Ошибка. Попробуй еще раз")
@@ -225,15 +310,11 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Только админ может смотреть статистику")
         return
     
-    # Обновляем данные
-    global links, users, stats
-    if USE_REDIS:
-        links, users, stats = load_all_data()
+    # Обновляем данные из Supabase
+    load_all_data()
     
     links_bar = "🟢" * min(stats['total_links'], 20)
     clicks_bar = "🔵" * min(stats['total_clicks'] // 10, 20)
-    
-    storage_type = "Redis" if USE_REDIS else "оперативной памяти"
     
     text = f"""📊 **Статистика:**
 
@@ -246,7 +327,7 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 👥 Пользователей: {len(users)}
 
 ⚡ Лимит: {MAX_LINKS_PER_MINUTE}/мин
-💾 Данные в {storage_type}"""
+💾 Данные в Supabase"""
     
     await update.message.reply_text(text)
 
@@ -288,7 +369,7 @@ async def stopbot_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Только админ может останавливать бота")
         return
     
-    success, fail = await broadcast(context, "🔴 Бот уходит на технический перерыв. Скоро вернемся!")
+    success, fail = await broadcast(context, "🔴 Бот уходит на технический перерыв. Скво вернемся!")
     await update.message.reply_text(f"✅ Уведомление отправлено:\nУспешно: {success}\nНе удалось: {fail}")
 
 async def startbot_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -306,19 +387,17 @@ async def debug_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     
     # Обновляем данные
-    global links, users, stats
-    if USE_REDIS:
-        links, users, stats = load_all_data()
-    
-    storage_type = "Redis" if USE_REDIS else "оперативной памяти"
+    load_all_data()
     
     debug_info = f"""
 🔍 **ДЕБАГ ИНФО:**
 
-💾 Хранилище: {storage_type}
+💾 Хранилище: Supabase
 📊 Ссылок: {len(links)}
 👥 Пользователей: {len(users)}
 📈 Статистика: {stats}
+
+🔗 Supabase URL: {SUPABASE_URL[:30]}...
 
 📨 Примеры ссылок:
 """
@@ -341,15 +420,16 @@ async def restore_links(update: Update, context: ContextTypes.DEFAULT_TYPE):
     restored = 0
     for short_code, original_url in old_links.items():
         try:
-            save_link(short_code, original_url)
-            links[short_code] = original_url
-            restored += 1
-            print(f"✅ Восстановлена: {short_code} → {original_url}")
-            await asyncio.sleep(0.5)
+            if save_link(short_code, original_url):
+                links[short_code] = original_url
+                restored += 1
+                print(f"✅ Восстановлена: {short_code} → {original_url}")
+                await asyncio.sleep(0.5)
         except Exception as e:
             print(f"❌ Ошибка восстановления {short_code}: {e}")
     
     stats['total_links'] = len(links)
+    update_stats_links()
     
     await update.message.reply_text(f"✅ Восстановлено {restored} старых ссылок! Теперь они должны работать.")
 
@@ -361,8 +441,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if await check_subscription(user_id, context):
         original_url = links.get(short_code)
         if original_url:
-            save_click()
-            stats['total_clicks'] += 1
+            stats["total_clicks"] += 1
+            update_stats_clicks()
             await query.message.edit_text(f"✅ Спасибо за подписку!\n\n{original_url}")
         else:
             await query.message.edit_text("❌ Ссылка не найдена")
@@ -383,8 +463,7 @@ def main():
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_handler(CallbackQueryHandler(button_handler))
     
-    storage_type = "Redis" if USE_REDIS else "оперативной памяти"
-    print(f"🤖 Бот запущен! Данные сохраняются в {storage_type}")
+    print("🤖 Бот запущен! Данные сохраняются в Supabase")
     app.run_polling()
 
 if __name__ == "__main__":
