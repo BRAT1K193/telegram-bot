@@ -13,9 +13,23 @@ BOT_TOKEN = "8465329960:AAH1mWkb9EO1eERvTQbR4WD2eTL5JD9IWBk"
 CHANNELS = ["@EasyScriptRBX"]
 ADMIN_USERNAMES = ["@coobaalt"]
 
-# Redis from Railway
+# Проверяем переменные Redis
 REDIS_URL = os.environ.get('REDIS_URL')
-r = redis.Redis.from_url(REDIS_URL)
+
+print(f"🔍 REDIS_URL: {REDIS_URL}")  # Для дебага
+
+if not REDIS_URL:
+    print("❌ REDIS_URL не найден! Используем память")
+    USE_REDIS = False
+else:
+    try:
+        r = redis.Redis.from_url(REDIS_URL)
+        r.ping()  # Проверяем подключение
+        print("✅ Redis подключен!")
+        USE_REDIS = True
+    except Exception as e:
+        print(f"❌ Ошибка подключения к Redis: {e}")
+        USE_REDIS = False
 
 MAX_LINKS_PER_MINUTE = 10
 user_limits = {}
@@ -24,7 +38,11 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.basicConfig(level=logging.INFO)
 
 def load_all_data():
-    """Загружаем все данные из Redis"""
+    """Загружаем все данные из Redis или используем память"""
+    if not USE_REDIS:
+        print("💾 Используем оперативную память")
+        return {}, set(), {'total_links': 0, 'total_clicks': 0}
+    
     try:
         # Загружаем ссылки
         links_data = r.hgetall('links')
@@ -51,26 +69,29 @@ def load_all_data():
         return {}, set(), {'total_links': 0, 'total_clicks': 0}
 
 def save_link(short_code, original_url):
-    """Сохраняем ссылку в Redis"""
-    try:
-        r.hset('links', short_code, original_url)
-        r.incr('total_links')
-    except Exception as e:
-        print(f"❌ Ошибка сохранения ссылки: {e}")
+    """Сохраняем ссылку"""
+    if USE_REDIS:
+        try:
+            r.hset('links', short_code, original_url)
+            r.incr('total_links')
+        except Exception as e:
+            print(f"❌ Ошибка сохранения ссылки в Redis: {e}")
 
 def save_user(user_id):
-    """Сохраняем пользователя в Redis"""
-    try:
-        r.sadd('users', user_id)
-    except Exception as e:
-        print(f"❌ Ошибка сохранения пользователя: {e}")
+    """Сохраняем пользователя"""
+    if USE_REDIS:
+        try:
+            r.sadd('users', user_id)
+        except Exception as e:
+            print(f"❌ Ошибка сохранения пользователя в Redis: {e}")
 
 def save_click():
-    """Сохраняем клик в Redis"""
-    try:
-        r.incr('total_clicks')
-    except Exception as e:
-        print(f"❌ Ошибка сохранения клика: {e}")
+    """Сохраняем клик"""
+    if USE_REDIS:
+        try:
+            r.incr('total_clicks')
+        except Exception as e:
+            print(f"❌ Ошибка сохранения клика в Redis: {e}")
 
 # Загружаем данные при старте
 links, users, stats = load_all_data()
@@ -105,6 +126,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_username = f"@{update.effective_user.username}" if update.effective_user.username else ""
     
     if user_username in ADMIN_USERNAMES:
+        storage_type = "Redis" if USE_REDIS else "оперативную память"
         text = f"""🤖 Команды для админа:
 
 🔗 Просто кинь ссылку - создам короткую
@@ -113,10 +135,11 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 /graph - график статистики
 /stopbot - уведомить о тех.перерыве
 /startbot - уведомить о возобновлении
+/debug - отладочная информация
 
 📊 Лимиты:
 - {MAX_LINKS_PER_MINUTE} ссылок в минуту
-- 💾 Данные в Redis"""
+- 💾 Данные в {storage_type}"""
     else:
         text = """🤖 Команды:
 
@@ -202,12 +225,15 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Только админ может смотреть статистику")
         return
     
-    # Обновляем данные из Redis
+    # Обновляем данные
     global links, users, stats
-    links, users, stats = load_all_data()
+    if USE_REDIS:
+        links, users, stats = load_all_data()
     
     links_bar = "🟢" * min(stats['total_links'], 20)
     clicks_bar = "🔵" * min(stats['total_clicks'] // 10, 20)
+    
+    storage_type = "Redis" if USE_REDIS else "оперативной памяти"
     
     text = f"""📊 **Статистика:**
 
@@ -220,7 +246,7 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 👥 Пользователей: {len(users)}
 
 ⚡ Лимит: {MAX_LINKS_PER_MINUTE}/мин
-💾 Данные в Redis"""
+💾 Данные в {storage_type}"""
     
     await update.message.reply_text(text)
 
@@ -281,12 +307,16 @@ async def debug_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # Обновляем данные
     global links, users, stats
-    links, users, stats = load_all_data()
+    if USE_REDIS:
+        links, users, stats = load_all_data()
+    
+    storage_type = "Redis" if USE_REDIS else "оперативной памяти"
     
     debug_info = f"""
 🔍 **ДЕБАГ ИНФО:**
 
-📊 Ссылок в Redis: {len(links)}
+💾 Хранилище: {storage_type}
+📊 Ссылок: {len(links)}
 👥 Пользователей: {len(users)}
 📈 Статистика: {stats}
 
@@ -353,7 +383,8 @@ def main():
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_handler(CallbackQueryHandler(button_handler))
     
-    print("🤖 Бот запущен! Данные сохраняются в Redis")
+    storage_type = "Redis" if USE_REDIS else "оперативной памяти"
+    print(f"🤖 Бот запущен! Данные сохраняются в {storage_type}")
     app.run_polling()
 
 if __name__ == "__main__":
