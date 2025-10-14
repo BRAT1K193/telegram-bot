@@ -10,7 +10,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 
 BOT_TOKEN = "8465329960:AAH1mWkb9EO1eERvTQbR4WD2eTL5JD9IWBk"
-CHANNELS = ["@EasyScriptRBX", "@trushobi", "https://t.me/robloxs_Scriptik"]
+CHANNELS = ["@EasyScriptRBX", "@trushobi", "t.me/robloxs_Scriptik"]
 ADMIN_USERNAMES = ["@coobaalt"]
 
 # Supabase configuration
