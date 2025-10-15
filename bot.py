@@ -244,6 +244,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 /stopbot - уведомить о тех.перерыве
 /startbot - уведомить о возобновлении
 /debug - отладочная информация
+/channels - управление каналами подписки
 
 📊 Лимиты:
 - {MAX_LINKS_PER_MINUTE} ссылок в минуту
@@ -273,7 +274,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if await check_subscription(user_id, context):
                 stats["total_clicks"] += 1
                 update_stats_clicks()
-                # УБРАЛ ЭМОДЗИ - просто отправляем ссылку
                 await update.message.reply_text(original_url)
             else:
                 buttons = []
@@ -294,7 +294,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 else:
                     stats["total_clicks"] += 1
                     update_stats_clicks()
-                    # УБРАЛ ЭМОДЗИ - просто отправляем ссылку
                     await update.message.reply_text(original_url)
         else:
             await update.message.reply_text("❌ Ссылка не найдена")
@@ -424,6 +423,8 @@ async def debug_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 👥 Пользователей: {len(users)}
 📈 Статистика: {stats}
 
+📢 Каналы подписки: {CHANNELS}
+
 🔗 Supabase URL: {SUPABASE_URL[:30]}...
 
 📨 Примеры ссылок:
@@ -467,12 +468,88 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if original_url:
             stats["total_clicks"] += 1
             update_stats_clicks()
-            # УБРАЛ ЭМОДЗИ - просто отправляем ссылку
             await query.message.edit_text(f"Спасибо за подписку!\n\n{original_url}")
         else:
             await query.message.edit_text("❌ Ссылка не найдена")
     else:
         await query.answer("❌ Ты еще не подписался на все каналы!", show_alert=True)
+
+# НОВЫЕ КОМАНДЫ ДЛЯ УПРАВЛЕНИЯ КАНАЛАМИ
+async def channels_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Показать текущие каналы для подписки"""
+    user_username = f"@{update.effective_user.username}" if update.effective_user.username else ""
+    if user_username not in ADMIN_USERNAMES:
+        await update.message.reply_text("❌ Только админ может управлять каналами")
+        return
+    
+    if not CHANNELS:
+        text = "📢 Список каналов для подписки пуст"
+    else:
+        text = "📢 **Текущие каналы для подписки:**\n\n"
+        for i, channel in enumerate(CHANNELS, 1):
+            text += f"{i}. {channel}\n"
+    
+    text += "\n🔧 **Команды:**\n"
+    text += "/addchannel @username - добавить канал\n"
+    text += "/removechannel @username - удалить канал\n"
+    text += "💡 **Формат:** @username (например: @robloxs_Scriptik)"
+    
+    await update.message.reply_text(text)
+
+async def addchannel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Добавить канал для подписки"""
+    user_username = f"@{update.effective_user.username}" if update.effective_user.username else ""
+    if user_username not in ADMIN_USERNAMES:
+        await update.message.reply_text("❌ Только админ может добавлять каналы")
+        return
+    
+    if not context.args:
+        await update.message.reply_text("❌ Укажи канал: /addchannel @username")
+        return
+    
+    channel = context.args[0]
+    
+    # Проверяем формат канала
+    if not channel.startswith('@'):
+        await update.message.reply_text("❌ Неправильный формат! Используй: @username\nНапример: /addchannel @robloxs_Scriptik")
+        return
+    
+    if channel in CHANNELS:
+        await update.message.reply_text(f"❌ Канал {channel} уже в списке")
+        return
+    
+    # Проверяем что бот админ в канале
+    try:
+        chat_member = await context.bot.get_chat_member(channel, context.bot.id)
+        if chat_member.status not in ['administrator', 'creator']:
+            await update.message.reply_text(f"❌ Бот не является админом в канале {channel}")
+            return
+    except Exception as e:
+        await update.message.reply_text(f"❌ Ошибка проверки канала: {e}\nУбедись что бот добавлен как админ в канал!")
+        return
+    
+    CHANNELS.append(channel)
+    await update.message.reply_text(f"✅ Канал {channel} добавлен в список для подписки!")
+
+async def removechannel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Удалить канал из подписки"""
+    user_username = f"@{update.effective_user.username}" if update.effective_user.username else ""
+    if user_username not in ADMIN_USERNAMES:
+        await update.message.reply_text("❌ Только админ может удалять каналы")
+        return
+    
+    if not context.args:
+        await update.message.reply_text("❌ Укажи канал: /removechannel @username")
+        return
+    
+    channel = context.args[0]
+    
+    if channel not in CHANNELS:
+        await update.message.reply_text(f"❌ Канал {channel} не найден в списке")
+        return
+    
+    CHANNELS.remove(channel)
+    await update.message.reply_text(f"✅ Канал {channel} удален из списка для подписки!")
 
 def main():
     app = Application.builder().token(BOT_TOKEN).build()
@@ -485,10 +562,14 @@ def main():
     app.add_handler(CommandHandler("startbot", startbot_command))
     app.add_handler(CommandHandler("debug", debug_command))
     app.add_handler(CommandHandler("restore", restore_links))
+    app.add_handler(CommandHandler("channels", channels_command))
+    app.add_handler(CommandHandler("addchannel", addchannel_command))
+    app.add_handler(CommandHandler("removechannel", removechannel_command))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_handler(CallbackQueryHandler(button_handler))
     
     print("🤖 Бот запущен! Данные сохраняются в Supabase")
+    print(f"📢 Текущие каналы подписки: {CHANNELS}")
     app.run_polling()
 
 if __name__ == "__main__":
