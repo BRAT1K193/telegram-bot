@@ -14,8 +14,8 @@ CHANNELS = ["@EasyScriptRBX"]
 ADMIN_USERNAMES = ["@coobaalt"]
 
 # Supabase configuration - с проверкой переменных
-SUPABASE_URL = os.environ.get('SUPABASE_URL')
-SUPABASE_KEY = os.environ.get('SUPABASE_KEY')
+SUPABASE_URL = os.environ.get('https://giqufrahztsgmmbmytfm.supabase.co')
+SUPABASE_KEY = os.environ.get('eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdpcXVmcmFoenRzZ21tYm15dGZtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjAxODc0ODcsImV4cCI6MjA3NTc2MzQ4N30.Jf6G6qIFj7ddwY5fV5F-6CuDIfNJolowTIjc5dPkV_s')
 
 # Если переменные не установлены, используем память
 if not SUPABASE_URL or not SUPABASE_KEY:
