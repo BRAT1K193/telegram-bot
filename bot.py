@@ -9,13 +9,21 @@ from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 
-BOT_TOKEN = "8465329960:AAH1mWkb9EO1eERvTQbR4WD2eTL5JD9IWBk"
-CHANNELS = ["@EasyScriptRBX", "@trushobi", "@robloxs_Scriptik", "@robloxstrall"]
+BOT_TOKEN = os.environ.get('BOT_TOKEN', "8465329960:AAH1mWkb9EO1eERvTQbR4WD2eTL5JD9IWBk")
+CHANNELS = ["@EasyScriptRBX"]
 ADMIN_USERNAMES = ["@coobaalt"]
 
-# Supabase configuration
+# Supabase configuration - с проверкой переменных
 SUPABASE_URL = os.environ.get('SUPABASE_URL')
 SUPABASE_KEY = os.environ.get('SUPABASE_KEY')
+
+# Если переменные не установлены, используем память
+if not SUPABASE_URL or not SUPABASE_KEY:
+    print("⚠️ Supabase переменные не найдены! Используем оперативную память")
+    USE_SUPABASE = False
+else:
+    print(f"✅ Supabase настроен: {SUPABASE_URL[:30]}...")
+    USE_SUPABASE = True
 
 MAX_LINKS_PER_MINUTE = 10
 user_limits = {}
@@ -36,9 +44,19 @@ def supabase_headers():
     }
 
 def load_all_data():
-    """Загружаем все данные из Supabase"""
+    """Загружаем все данные из Supabase или используем память"""
     global links, users, stats
     
+    if not USE_SUPABASE:
+        print("💾 Используем оперативную память")
+        # Восстанавливаем тестовые ссылки
+        links = {
+            "test1": "https://google.com",
+            "test2": "https://youtube.com",
+        }
+        stats = {"total_links": len(links), "total_clicks": 0}
+        return
+        
     try:
         # Загружаем ссылки
         response = requests.get(
